@@ -202,9 +202,6 @@ void execute_cmds(int *commands, int *in_redir, int *out_redir, char **argv, int
   int first_child_pid;
   int state = run_bg + 1;
   sigset_t block_set;
-  if (run_bg) {
-    printf("RUN IN BACKGROUD\n");
-  }
   if (num_cmds < 1) {
     exit(0);
   }
@@ -219,7 +216,7 @@ void execute_cmds(int *commands, int *in_redir, int *out_redir, char **argv, int
       if (!first_child_pid) {
         first_child_pid = getpid();
       }
-      // setpgid(0, 0); FIXME: UNCOMMENT THIS AFTER YOU IMPLEMENT SIG HANDLER
+      setpgid(0, 0);
       sigprocmask(SIG_UNBLOCK, &block_set, NULL);
       // printf("HERE7\n");
 
@@ -235,7 +232,10 @@ void execute_cmds(int *commands, int *in_redir, int *out_redir, char **argv, int
       addjob(jobs, child_pid, parent_pid, state, argv[commands[0]]);
       // listjobs(jobs);
       sigprocmask(SIG_UNBLOCK, &block_set, NULL);
-      waitfg(child_pid);
+      if (!run_bg) {
+        waitfg(child_pid);
+      }
+      // waitfg(child_pid);
       // listjobs(jobs);
     }
 
@@ -427,7 +427,7 @@ void waitfg(pid_t pid)
      if (child_pid == -1) {
        printf("Error while removing child\n");
      } else if (child_pid > 0) {
-       // printf("REMOVING\n");
+       // printf("PID %d finished\n", child_pid);
        deletejob(jobs, child_pid);
      }
    }
@@ -544,6 +544,9 @@ int deletejob(struct job_t *jobs, pid_t pid)
 	if (jobs[i].pid == pid) {
 	    clearjob(&jobs[i]);
 	    nextjid = maxjid(jobs)+1;
+      if (verbose) {
+        printf("Removed job [%d]\n", pid);
+      }
 	    return 1;
 	}
     }
