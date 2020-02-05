@@ -93,7 +93,7 @@ typedef void handler_t(int);
 handler_t *Signal(int signum, handler_t *handler);
 
 // My  helper functions
-void execute_cmds(int *commands, int *in_redir, int *out_redir, char **argv, int num_cmds);
+void execute_cmds(int *commands, int *in_redir, int *out_redir, char **argv, int num_cmds, int run_bg);
 
 /*
  * main - The shell's main routine
@@ -155,6 +155,7 @@ int main(int argc, char **argv)
 
 	/* Evaluate the command line */
 	eval(cmdline);
+  // printf("HERE1\n");
 	fflush(stdout);
 	fflush(stdout);
     }
@@ -182,43 +183,63 @@ void eval(char *cmdline)
   int stdout_redir[MAXARGS];
   int num_cmds;
   strcpy(buffer, cmdline);
-  parseline(buffer, argv);
-
-// printf("HERE\n", );
+  int run_bg = parseline(buffer, argv);
+  if (argv[0] == NULL) {
+    return;
+  }
+  // printf("HERE2\n");
   if(!builtin_cmd(argv)) {
     num_cmds = parseargs(argv, cmds, stdin_redir, stdout_redir);
-    execute_cmds(cmds, stdin_redir, stdout_redir, argv, num_cmds);
+    execute_cmds(cmds, stdin_redir, stdout_redir, argv, num_cmds, run_bg);
   }
   return;
 }
 
-void execute_cmds(int *commands, int *in_redir, int *out_redir, char **argv, int num_cmds) { //FIXME: MAYBE MAKE THESE CONSTS?
-  // int num_pipes = num_cmds - 1;
-  // int fds[num_pipes][2];
-  // int stdin_copy = dup(0);
-  // int stdout_copy = dup(1);
-  int pid;
+void execute_cmds(int *commands, int *in_redir, int *out_redir, char **argv, int num_cmds, int run_bg) {
+  // printf("HERE3\n");
+  int parent_pid = getpid();
+  int child_pid;
   int first_child_pid;
-
-  for (int i = 0; i < num_cmds; i++) {
-
+  int state = run_bg + 1;
+  sigset_t block_set;
+  if (run_bg) {
+    printf("RUN IN BACKGROUD\n");
+  }
+  if (num_cmds < 1) {
+    exit(0);
+  }
     char *env[] = { NULL };
-    if ((pid = fork()) == 0 ) {
+                              //FIXME: BLOCK SIGNALS BEFORE THIS IS CALLED AND THEN UNBLOCK ON PARENT AND CHILD (BEFORE EXC CALLED)
+    // printf("HERE4\n");
+    sigemptyset(&block_set);
+    sigaddset(&block_set, SIGCHLD);
+    sigprocmask(SIG_BLOCK, &block_set, NULL);
+
+    if ((child_pid = fork()) == 0 ) {
       if (!first_child_pid) {
         first_child_pid = getpid();
       }
-      setpgid(getpid(), first_child_pid);
-      execve(argv[commands[i]], &argv[commands[i]], env);
+      // setpgid(0, 0); FIXME: UNCOMMENT THIS AFTER YOU IMPLEMENT SIG HANDLER
+      sigprocmask(SIG_UNBLOCK, &block_set, NULL);
+      // printf("HERE7\n");
+
+      if(execve(argv[commands[0]], &argv[commands[0]], env) == -1) {
+        printf("Error\n");
+            exit(1);
+      } else {
+        // printf("HERE5\n");
+            exit(0);
+      }
       exit(0);
     } else {
-      int child_status;
-      if (i == 0) {
-        first_child_pid = pid;
-      }
-
-      waitpid(pid,&child_status, NULL);
+      addjob(jobs, child_pid, parent_pid, state, argv[commands[0]]);
+      // listjobs(jobs);
+      sigprocmask(SIG_UNBLOCK, &block_set, NULL);
+      waitfg(child_pid);
+      // listjobs(jobs);
     }
-  }
+
+// printf("HERE8\n");
   return;
 
 }
@@ -356,6 +377,8 @@ int builtin_cmd(char **argv)
     printf("Print fg\n");
   } else if (!strcmp(argv[0],"kill")) {
     printf("Print kill\n");
+  }  else if (!strcmp(argv[0],"jobs")) {
+    listjobs(jobs);
   }
 
     return 0;     /* not a builtin command */
@@ -374,6 +397,11 @@ void do_bgfg(char **argv)
  */
 void waitfg(pid_t pid)
 {
+  int fg_job = fgpid(jobs);
+  while (fg_job == pid) {
+    sleep(0);
+    fg_job = fgpid(jobs);
+  }
     return;
 }
 
@@ -388,10 +416,39 @@ void waitfg(pid_t pid)
  *     available zombie children, but doesn't wait for any other
  *     currently running children to terminate.
  */
-void sigchld_handler(int sig)
-{
-    return;
-}
+ void sigchld_handler(int sig)
+ {
+   int status = -1;
+   int child_pid = -1;
+   int test;
+   // printf("\nSignal: %d received\n", sig);
+   while (status != 0) {
+     child_pid = waitpid(-1, &status, WUNTRACED | WNOHANG);
+     if (child_pid == -1) {
+       printf("Error while removing child\n");
+     } else if (child_pid > 0) {
+       // printf("REMOVING\n");
+       deletejob(jobs, child_pid);
+     }
+   }
+     return;
+ }
+// void sigchld_handler(int sig)
+// {
+//   int status = -1;
+//   int child_pid = -1;
+//   int test;
+//   printf("\nSignal: %d received\n", sig);
+//   while (child_pid != 0) {
+//     status = waitpid(-1, &child_pid, WUNTRACED | WNOHANG);
+//     if (status == -1) {
+//     } else if (status > 0) {
+//       deletejob(jobs, status);
+//     }
+//   }
+//     return;
+// }
+
 
 /*
  * sigint_handler - The kernel sends a SIGINT to the shell whenver the
