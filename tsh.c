@@ -76,7 +76,7 @@ void sigquit_handler(int sig);
 void clearjob(struct job_t *job);
 void initjobs(struct job_t *jobs);
 int maxjid(struct job_t *jobs);
-int addjob(struct job_t *jobs, pid_t pid, pid_t pgid, int state, char *cmdline);
+int addjob(struct job_t *jobs, pid_t pid, pid_t pgid, int state, char *cmdline, int run_bg);
 int deletejob(struct job_t *jobs, pid_t pid);
 pid_t fgpid(struct job_t *jobs);
 struct job_t *getjobpid(struct job_t *jobs, pid_t pid);
@@ -93,7 +93,7 @@ typedef void handler_t(int);
 handler_t *Signal(int signum, handler_t *handler);
 
 // My  helper functions
-void execute_cmds(int *commands, int *in_redir, int *out_redir, char **argv, int num_cmds, int run_bg);
+void execute_cmds(int *commands, int *in_redir, int *out_redir, char **argv, int num_cmds, int run_bg, char * cmdline);
 
 /*
  * main - The shell's main routine
@@ -190,24 +190,22 @@ void eval(char *cmdline)
   // printf("HERE2\n");
   if(!builtin_cmd(argv)) {
     num_cmds = parseargs(argv, cmds, stdin_redir, stdout_redir);
-    execute_cmds(cmds, stdin_redir, stdout_redir, argv, num_cmds, run_bg);
+    execute_cmds(cmds, stdin_redir, stdout_redir, argv, num_cmds, run_bg, cmdline);
   }
   return;
 }
 
-void execute_cmds(int *commands, int *in_redir, int *out_redir, char **argv, int num_cmds, int run_bg) {
+void execute_cmds(int *commands, int *in_redir, int *out_redir, char **argv, int num_cmds, int run_bg, char *cmdline) {
   // printf("HERE3\n");
   int parent_pid = getpid();
   int child_pid;
   int first_child_pid;
   int state = run_bg + 1;
-  sigset_t block_set;
   if (num_cmds < 1) {
     exit(0);
   }
     char *env[] = { NULL };
-                              //FIXME: BLOCK SIGNALS BEFORE THIS IS CALLED AND THEN UNBLOCK ON PARENT AND CHILD (BEFORE EXC CALLED)
-    // printf("HERE4\n");
+    sigset_t block_set;
     sigemptyset(&block_set);
     sigaddset(&block_set, SIGCHLD);
     sigprocmask(SIG_BLOCK, &block_set, NULL);
@@ -229,8 +227,7 @@ void execute_cmds(int *commands, int *in_redir, int *out_redir, char **argv, int
       }
       exit(0);
     } else {
-      addjob(jobs, child_pid, parent_pid, state, argv[commands[0]]);
-      // listjobs(jobs);
+      addjob(jobs, child_pid, parent_pid, state, cmdline, run_bg);
       sigprocmask(SIG_UNBLOCK, &block_set, NULL);
       if (!run_bg) {
         waitfg(child_pid);
@@ -378,7 +375,9 @@ int builtin_cmd(char **argv)
   } else if (!strcmp(argv[0],"kill")) {
     printf("Print kill\n");
   }  else if (!strcmp(argv[0],"jobs")) {
+    printf("MADE IT HERE\n" );
     listjobs(jobs);
+    return 1;
   }
 
     return 0;     /* not a builtin command */
@@ -419,35 +418,21 @@ void waitfg(pid_t pid)
  void sigchld_handler(int sig)
  {
    int status = -1;
-   int child_pid = -1;
+   int child_pid = 0;
    int test;
    // printf("\nSignal: %d received\n", sig);
-   while (status != 0) {
+   while (child_pid > -1) {
+     // printf("1Status: %d  child_pid: %d\n",status, child_pid);
      child_pid = waitpid(-1, &status, WUNTRACED | WNOHANG);
-     if (child_pid == -1) {
-       printf("Error while removing child\n");
-     } else if (child_pid > 0) {
+     // printf("2Status: %d  child_pid: %d\n",status, child_pid);
+
+     if (child_pid > 0) {
        // printf("PID %d finished\n", child_pid);
        deletejob(jobs, child_pid);
      }
    }
      return;
  }
-// void sigchld_handler(int sig)
-// {
-//   int status = -1;
-//   int child_pid = -1;
-//   int test;
-//   printf("\nSignal: %d received\n", sig);
-//   while (child_pid != 0) {
-//     status = waitpid(-1, &child_pid, WUNTRACED | WNOHANG);
-//     if (status == -1) {
-//     } else if (status > 0) {
-//       deletejob(jobs, status);
-//     }
-//   }
-//     return;
-// }
 
 
 /*
@@ -457,6 +442,19 @@ void waitfg(pid_t pid)
  */
 void sigint_handler(int sig)
 {
+  // printf("THIS :%d\n",sig);
+  // sigset_t block_set;
+  // sigemptyset(&block_set);
+  // sigaddset(&block_set, 2);
+  // sigprocmask(SIG_BLOCK, &block_set, NULL);
+
+  int to_kill = fgpid(jobs);
+  // printf("\nKill: %d  Signal: %d\n",to_kill, sig);
+  struct job_t* killed_job = getjobpid(jobs, to_kill);
+  kill(- to_kill, sig);
+  waitfg(to_kill);
+  printf("Job [%d] (%d) terminated by signal 2\n",killed_job->jid + 1, to_kill );
+  // sigprocmask(SIG_UNBLOCK, &block_set, NULL);
     return;
 }
 
@@ -506,7 +504,7 @@ int maxjid(struct job_t *jobs)
 }
 
 /* addjob - Add a job to the job list */
-int addjob(struct job_t *jobs, pid_t pid, pid_t pgid, int state, char *cmdline)
+int addjob(struct job_t *jobs, pid_t pid, pid_t pgid, int state, char *cmdline, int run_bg)
 {
     int i;
 
@@ -524,6 +522,9 @@ int addjob(struct job_t *jobs, pid_t pid, pid_t pgid, int state, char *cmdline)
 	    strcpy(jobs[i].cmdline, cmdline);
   	    if(verbose){
 	        printf("Added job [%d] %d %s\n", jobs[i].jid, jobs[i].pid, jobs[i].cmdline);
+            }
+            if (run_bg) {
+              printf("[%d] (%d) %s",(i + 1), pid, cmdline);
             }
             return 1;
 	}
@@ -605,6 +606,7 @@ int pid2jid(pid_t pid)
 /* listjobs - Print the job list */
 void listjobs(struct job_t *jobs)
 {
+  printf("ALSO HERE\n");
     int i;
 
     for (i = 0; i < MAXJOBS; i++) {
