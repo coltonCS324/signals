@@ -430,6 +430,8 @@ void waitfg(pid_t pid)
 		   deletejob(jobs, child_pid);
 	   } else if (WIFSTOPPED(status)) {
 		   printf("STOPPED");
+		   struct job_t* to_stop = getjobpid(jobs, child_pid);
+		   to_stop->state = ST;
 	   }
      // printf("1Status: %d  child_pid: %d\n",status, child_pid);
      // printf("2Status: %d  child_pid: %d\n",status, child_pid);
@@ -453,8 +455,8 @@ void sigint_handler(int sig)
   int to_kill = fgpid(jobs);
   struct job_t* killed_job = getjobpid(jobs, to_kill);
   kill(- to_kill, SIGINT);
-  waitfg(to_kill);
-  printf("Job [%d] (%d) terminated by signal 2\n",killed_job->jid + 1, to_kill );
+  //waitfg(to_kill);
+ // printf("Job [%d] (%d) terminated by signal 2\n",killed_job->jid + 1, to_kill );
     return;
 }
 
@@ -468,9 +470,9 @@ void sigtstp_handler(int sig)
   listjobs(jobs);
   int to_kill = fgpid(jobs);
   struct job_t* killed_job = getjobpid(jobs, to_kill);
-  kill(- to_kill, sig);
-  waitfg(to_kill);
-  printf("Job [%d] (%d) terminated by signal whatever\n",pid2jid(to_kill), to_kill );
+  kill(- to_kill, SIGTSTP);
+  //waitfg(to_kill);
+ // printf("Job [%d] (%d) terminated by signal whatever\n",pid2jid(to_kill), to_kill );
     return;
 }
 
