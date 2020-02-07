@@ -94,6 +94,8 @@ handler_t *Signal(int signum, handler_t *handler);
 
 // My  helper functions
 void execute_cmds(int *commands, int *in_redir, int *out_redir, char **argv, int num_cmds, int run_bg, char * cmdline);
+void do_bg(char **argv);
+void do_fg(char **argv);
 
 /*
  * main - The shell's main routine
@@ -155,7 +157,6 @@ int main(int argc, char **argv)
 
 	/* Evaluate the command line */
 	eval(cmdline);
-  // printf("HERE1\n");
 	fflush(stdout);
 	fflush(stdout);
     }
@@ -187,7 +188,6 @@ void eval(char *cmdline)
   if (argv[0] == NULL) {
     return;
   }
-  // printf("HERE2\n");
   if(!builtin_cmd(argv)) {
     num_cmds = parseargs(argv, cmds, stdin_redir, stdout_redir);
     execute_cmds(cmds, stdin_redir, stdout_redir, argv, num_cmds, run_bg, cmdline);
@@ -219,7 +219,7 @@ void execute_cmds(int *commands, int *in_redir, int *out_redir, char **argv, int
       // printf("HERE7\n");
 
       if(execve(argv[commands[0]], &argv[commands[0]], env) == -1) {
-        printf("Error\n");
+        printf("Error executing command %s\n", argv[commands[0]]);
             exit(1);
       } else {
         // printf("HERE5\n");
@@ -232,11 +232,8 @@ void execute_cmds(int *commands, int *in_redir, int *out_redir, char **argv, int
       if (!run_bg) {
         waitfg(child_pid);
       }
-      // waitfg(child_pid);
-      // listjobs(jobs);
     }
 
-// printf("HERE8\n");
   return;
 
 }
@@ -369,7 +366,8 @@ int builtin_cmd(char **argv)
   if (!strcmp(argv[0],"quit")) {
     exit(0);
   } else if (!strcmp(argv[0],"bg")) {
-    printf("Print bg\n");
+    // printf("Print bg\n");
+    do_bg(argv);
   } else if (!strcmp(argv[0],"fg")) {
     printf("Print fg\n");
   } else if (!strcmp(argv[0],"kill")) {
@@ -389,6 +387,28 @@ int builtin_cmd(char **argv)
 void do_bgfg(char **argv)
 {
     return;
+}
+
+void do_bg(char **argv) {
+  for (int i = 0; i < MAXLINE; i++) {
+    if (!argv[i]) {
+      printf("HERE1\n");
+      return;
+    }
+    if (i == 5) {
+      printf("HERE 2\n" );
+      return;
+    }
+    printf("%s\n",argv[i]);
+
+
+  }
+  return;
+}
+
+void do_fg(char **argv) {
+
+  return;
 }
 
 /*
@@ -429,17 +449,10 @@ void waitfg(pid_t pid)
 		   printf("Job [%d] (%d) terminated by signal %d\n",pid2jid(child_pid), child_pid, SIGINT);
 		   deletejob(jobs, child_pid);
 	   } else if (WIFSTOPPED(status)) {
-		   printf("STOPPED");
+		   printf("Job [%d] (%d) stopped by signal %d\n",pid2jid(child_pid), child_pid, SIGTSTP);
 		   struct job_t* to_stop = getjobpid(jobs, child_pid);
 		   to_stop->state = ST;
 	   }
-     // printf("1Status: %d  child_pid: %d\n",status, child_pid);
-     // printf("2Status: %d  child_pid: %d\n",status, child_pid);
-    // if (child_pid > 0) {
-       // printf("PID %d finished\n", child_pid);
-     //  deletejob(jobs, child_pid);
-    // }
-
    }
      return;
  }
@@ -455,8 +468,7 @@ void sigint_handler(int sig)
   int to_kill = fgpid(jobs);
   struct job_t* killed_job = getjobpid(jobs, to_kill);
   kill(- to_kill, SIGINT);
-  //waitfg(to_kill);
- // printf("Job [%d] (%d) terminated by signal 2\n",killed_job->jid + 1, to_kill );
+
     return;
 }
 
@@ -467,12 +479,10 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig)
 {
-  listjobs(jobs);
   int to_kill = fgpid(jobs);
   struct job_t* killed_job = getjobpid(jobs, to_kill);
   kill(- to_kill, SIGTSTP);
-  //waitfg(to_kill);
- // printf("Job [%d] (%d) terminated by signal whatever\n",pid2jid(to_kill), to_kill );
+
     return;
 }
 
@@ -619,11 +629,7 @@ void listjobs(struct job_t *jobs)
 
     for (i = 0; i < MAXJOBS; i++) {
 	if (jobs[i].pid != 0) {
-    // if (verbose) {
-    //  printf("[%d] (%d) %s", jobs[i].jid, jobs[i].pid, jobs[i].pgid);
-    // } else {
        printf("[%d] (%d) ", jobs[i].jid, jobs[i].pid);
-    // }
 	    switch (jobs[i].state) {
 		case BG:
 		    printf("Running ");
