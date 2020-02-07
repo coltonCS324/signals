@@ -375,7 +375,7 @@ int builtin_cmd(char **argv)
   } else if (!strcmp(argv[0],"kill")) {
     printf("Print kill\n");
   }  else if (!strcmp(argv[0],"jobs")) {
-    printf("MADE IT HERE\n" );
+    // printf("MADE IT HERE\n" );
     listjobs(jobs);
     return 1;
   }
@@ -420,16 +420,24 @@ void waitfg(pid_t pid)
    int status = -1;
    int child_pid = 0;
    int test;
+   int i = 0;
    // printf("\nSignal: %d received\n", sig);
-   while (child_pid > -1) {
+   while ((child_pid = waitpid(-1, &status, WUNTRACED | WNOHANG)) > 0) {
+	   if (WIFEXITED(status)) {
+		   deletejob(jobs, child_pid);
+	   } else if (WIFSIGNALED(status)) {
+		   printf("Job [%d] (%d) terminated by signal %d\n",pid2jid(child_pid), child_pid, SIGINT);
+		   deletejob(jobs, child_pid);
+	   } else if (WIFSTOPPED(status)) {
+		   printf("STOPPED");
+	   }
      // printf("1Status: %d  child_pid: %d\n",status, child_pid);
-     child_pid = waitpid(-1, &status, WUNTRACED | WNOHANG);
      // printf("2Status: %d  child_pid: %d\n",status, child_pid);
-
-     if (child_pid > 0) {
+    // if (child_pid > 0) {
        // printf("PID %d finished\n", child_pid);
-       deletejob(jobs, child_pid);
-     }
+     //  deletejob(jobs, child_pid);
+    // }
+
    }
      return;
  }
@@ -442,19 +450,11 @@ void waitfg(pid_t pid)
  */
 void sigint_handler(int sig)
 {
-  // printf("THIS :%d\n",sig);
-  // sigset_t block_set;
-  // sigemptyset(&block_set);
-  // sigaddset(&block_set, 2);
-  // sigprocmask(SIG_BLOCK, &block_set, NULL);
-
   int to_kill = fgpid(jobs);
-  // printf("\nKill: %d  Signal: %d\n",to_kill, sig);
   struct job_t* killed_job = getjobpid(jobs, to_kill);
-  kill(- to_kill, sig);
+  kill(- to_kill, SIGINT);
   waitfg(to_kill);
   printf("Job [%d] (%d) terminated by signal 2\n",killed_job->jid + 1, to_kill );
-  // sigprocmask(SIG_UNBLOCK, &block_set, NULL);
     return;
 }
 
@@ -465,6 +465,12 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig)
 {
+  listjobs(jobs);
+  int to_kill = fgpid(jobs);
+  struct job_t* killed_job = getjobpid(jobs, to_kill);
+  kill(- to_kill, sig);
+  waitfg(to_kill);
+  printf("Job [%d] (%d) terminated by signal whatever\n",pid2jid(to_kill), to_kill );
     return;
 }
 
@@ -606,12 +612,16 @@ int pid2jid(pid_t pid)
 /* listjobs - Print the job list */
 void listjobs(struct job_t *jobs)
 {
-  printf("ALSO HERE\n");
+  // printf("ALSO HERE\n");
     int i;
 
     for (i = 0; i < MAXJOBS; i++) {
 	if (jobs[i].pid != 0) {
-	    printf("[%d] (%d) ", jobs[i].jid, jobs[i].pid);
+    // if (verbose) {
+    //  printf("[%d] (%d) %s", jobs[i].jid, jobs[i].pid, jobs[i].pgid);
+    // } else {
+       printf("[%d] (%d) ", jobs[i].jid, jobs[i].pid);
+    // }
 	    switch (jobs[i].state) {
 		case BG:
 		    printf("Running ");
