@@ -94,8 +94,6 @@ handler_t *Signal(int signum, handler_t *handler);
 
 // My  helper functions
 void execute_cmds(int *commands, int *in_redir, int *out_redir, char **argv, int num_cmds, int run_bg, char * cmdline);
-void do_bg(char **argv);
-void do_fg(char **argv);
 
 /*
  * main - The shell's main routine
@@ -356,16 +354,13 @@ int parseline(const char *cmdline, char **argv)
  */
 int builtin_cmd(char **argv)
 {
-  // char *first_cmd = *argv;
   if (!strcmp(argv[0],"quit")) {
     exit(0);
   } else if (!strcmp(argv[0],"bg")) {
     do_bgfg(argv, 1);
   } else if (!strcmp(argv[0],"fg")) {
     do_bgfg(argv, 0);
-  } else if (!strcmp(argv[0],"kill")) {
-    printf("Print kill\n");
-  }  else if (!strcmp(argv[0],"jobs")) {
+  } else if (!strcmp(argv[0],"jobs")) {
     listjobs(jobs);
   } else {
     return 0;
@@ -391,14 +386,14 @@ void do_bgfg(char **argv, int bg) {
   if ((arg_1[0]) == '%') {
     job_num_string = &arg_1[1];
     int job_num = atoi(job_num_string);
-    if (job_num == 0 && isalpha(job_num_string[0])) {
-      printf("%s argument must be a PID or %cjobid\n", argv[0], special);
-    }
     start_job = getjobjid(jobs, job_num);
     if (!start_job) {
       printf("%s: No such job\n", arg_1);
       return;
     }
+  } else if (!isdigit(arg_1[0])) {
+    printf("%s: argument must be a PID or %cjobid\n", argv[0], special);
+    return;
   } else {
     job_num_string = arg_1;
     int job_pid = atoi(job_num_string);
@@ -417,15 +412,13 @@ void do_bgfg(char **argv, int bg) {
 
   if (!bg) {
     waitfg(start_job->pid);
+  } else {
+    printf("[%d] (%d) %s", start_job->jid, start_job->pid, start_job->cmdline);
   }
 
   return;
 }
 
-void do_fg(char **argv) {
-
-  return;
-}
 
 /*
  * waitfg - Block until process pid is no longer the foreground process
@@ -466,9 +459,7 @@ void waitfg(pid_t pid)
 		   printf("Job [%d] (%d) stopped by signal %d\n",pid2jid(child_pid), child_pid, SIGTSTP);
 		   struct job_t* to_stop = getjobpid(jobs, child_pid);
 		   to_stop->state = ST;
-	   } else if (WIFCONTINUED(status)) {
-       printf("CAUGHT IT\n");
-     }
+	   }
    }
      return;
  }
